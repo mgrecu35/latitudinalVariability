@@ -22,9 +22,9 @@ subroutine initP2
      attKuJ(i)=att13Table(i,1)
      rJ(i)=pr13Table(i,1)
      if(dmj(i).lt.0.8) then
-        dnT(i)=1*log((0.8/dmj(i))**0.25)
+        dnT(i)=1.5*log((0.8/dmj(i))**0.25)+0.0
      else
-        dnT(i)=0.5*log((0.8/dmj(i))**0.25)
+        dnT(i)=1.0*log((0.8/dmj(i))**0.25)+0.0
      end if
      zKudN(i)=zKuSJ(i)+10*dnT(i)
   end do
@@ -71,6 +71,7 @@ subroutine prof1d(btop,bzd,bcf,bsfc,binBB,binBBT,zKuL,zKaL,pType,dr,n1d,eps,imu,
         call iter_profcv(btop,bzd,bcf,bsfc,zKuL,zKaL,dr,n1d,eps,imu,&
              dn1d1,dm1d1,rrate1d1,zKuC1,zKaSim1,epst1,piaKu1,piaKa1,ptype,dnCoeff_new,dn-0.1,dnp,dzdn,&
              srtPIAKu,relSRTPIAKu)
+        print*, piaKu,piaKu1, piaKa, piaKa1, piaKa-piaKu, dsrtPIA
         bbb=bzd+3
      else
         bbb=binBB+2
@@ -156,11 +157,11 @@ subroutine iter_profcv(btop,bzd,bcf,bsfc,zKuL,zKaL,dr,n1d,eps,imu,&
   real :: dmCoeff(3)= (/-2.56885571e-04,  7.18909743e-02, -1.60889523e+00/)
   !(/-4.57599678e-04,  7.852247958e-02, -1.78316499e+00/)
   !(/-4.57599678e-04,  8.52247958e-02, -1.78316499e+00/)
-  real :: rn, dm_old
+  real :: rn, dm_old!, dm_sub(n1d,31)
   real :: zka1,zka2,attka2
   integer :: kk, imc, isub
   real :: dmm
-  real :: piaSRTKu
+  real :: piaSRTKu, dzdn_sub2(n1d,n1d,31), dzdn_sub1(n1d,n1d,31), zkasim_sub(n1d,31), piaKa_sub(31)
   integer :: relPIASRTKu
   piaKu=0
   !dmCoeff=array([ 0.02893781, -0.69481455])
@@ -237,13 +238,22 @@ subroutine iter_profcv(btop,bzd,bcf,bsfc,zKuL,zKaL,dr,n1d,eps,imu,&
   sumprob=0
   piaKu=0.0
   rrate1d(bzd+1:bcf+1)=0.0
+  dm1d(bzd+1:bcf+1)=0.0
+  dn1d(bzd+1:bcf+1)=0.0
   rrate1d_sub=0
+  dm_sub=0
+  dn_sub=0
+  zkasim_sub=0
+  dzdn_sub2=0
+  dzdn_sub1=0
+  zkasim(bzd+1:bcf+1)=0
+  dzdn(bzd+1:bcf+1,bzd+1:bcf+1)=0
   do isub=1,31
      zetaS(isub)=0
      do k=bzd,bcf
         if (zKuL(k+1).gt.10) then
-           call bisection2(zKudN,nbins,zKuL(k+1)+piaKuS-10*(isub-16)*0.02, n1)
-           dn_sub(k+1,isub)=(zKudN(n1)-zKuSJ(n1))/10.0+(isub-16)*0.02
+           call bisection2(zKudN,nbins,zKuL(k+1)+piaKuS-10*(isub-16)*0.02-10*dncv, n1)
+           dn_sub(k+1,isub)=(zKudN(n1)-zKuSJ(n1))/10.0+(isub-16)*0.02+dncv
            dn=dn_sub(k+1,isub)
            attKu=att13Table(n1,imu)*10**dn
            attKa=att35Table(n1,imu)*10**dn
@@ -256,13 +266,33 @@ subroutine iter_profcv(btop,bzd,bcf,bsfc,zKuL,zKaL,dr,n1d,eps,imu,&
         endif
      end do
      if (q*beta*zetaS(isub).lt.0.985) then
+        piaKa_sub(isub)=piaKas
         piaHB_sub(isub)=-10/beta*log10(1-q*beta*zetaS(isub))+attKu*(bsfc-bcf)*2*dr
         do k=bzd,bcf
-           zKuC_sub(k+1,isub)=zKuL(k+1)-10/beta*log10(1-q*beta*zeta1d(k+1,isub))
-           n1=int((zKuC_sub(k+1,isub)-zmin-10*dn_sub(k+1,isub))/dzbin)
-           if(n1.lt.1) n1=1
-           if(n1.gt.nbins) n1=nbins
-           rrate1d_sub(k+1,isub)=pr13Table(n1,imu)*10**dn_sub(k+1,isub)
+           if(zKuL(k+1).gt.10) then
+              zKuC_sub(k+1,isub)=zKuL(k+1)-10/beta*log10(1-q*beta*zeta1d(k+1,isub))
+              n1=int((zKuC_sub(k+1,isub)-zmin-10*dn_sub(k+1,isub))/dzbin)
+              dn=dn_sub(k+1,isub)
+              attKa=att35Table(n1,imu)*10**dn
+              piaKa_sub(isub)=piaKa_sub(isub)+attKa*dr
+              if(n1.lt.1) n1=1
+              if(n1.gt.nbins) n1=nbins
+              dm_sub(k+1,isub)=d013Table(n1,imu)
+              rrate1d_sub(k+1,isub)=pr13Table(n1,imu)*10**dn_sub(k+1,isub)
+              zKa1=z35Table(n1,imu)+10*dn
+              zkasim_sub(k+1,isub)= zKa1-piaKa_sub(isub)
+              piaKa_sub(isub)=piaKa_sub(isub)+attKa*dr
+              if(n1.lt.nbins-4) then
+                 zKa2=z35Table(n1+4,imu)+10*(dn-0.1)
+                 attKa2=att35Table(n1+4,imu)*10**(dn-0.1)
+                 dzdn_sub2(k+1,k+1,isub)=dzdn_sub2(k+1,k+1,isub)+(zka2-attKa2*dr)-((zka1-attKa*dr))
+                 dzdn_sub1(k+1,k+1,isub)=dzdn_sub1(k+1,k+1,isub)+zka1-attKa*dr
+                 do kk=k+1,bcf
+                    dzdn_sub2(kk+1,k+1,isub)=dzdn_sub2(kk+1,k+1,isub)-(attKa2*dr-attKa*dr)
+                    dzdn_sub1(kk+1,k+1,isub)=dzdn_sub1(kk+1,k+1,isub)-attKa*dr
+                 end do
+              end if
+           end if
         end do
         probs(isub)=exp(-((isub-16)*0.02)**2/0.5**2)
         if(rrate1d_sub(bcf+1,isub).gt.150) probs(isub)=probs(isub)*0.9
@@ -270,14 +300,38 @@ subroutine iter_profcv(btop,bzd,bcf,bsfc,zKuL,zKaL,dr,n1d,eps,imu,&
         probs(isub)=0.0
      end if
      do k=bzd,bcf
-        rrate1d(k+1)= rrate1d(k+1)+probs(isub)*rrate1d_sub(k+1,isub)
+        if(zkuL(k+1).gt.10) then
+           rrate1d(k+1)= rrate1d(k+1)+probs(isub)*rrate1d_sub(k+1,isub)
+           dm1d(k+1)=dm1d(k+1)+probs(isub)*dm_sub(k+1,isub)
+           dn1d(k+1)=dn1d(k+1)+probs(isub)*dn_sub(k+1,isub)
+           zkasim(k+1)=zkasim(k+1)+10**(0.1*zkasim_sub(k+1,isub))*probs(isub)
+           dzdn(k+1,k+1)=dzdn(k+1,k+1)+10**(0.1*zkasim_sub(k+1,isub)+0.1*dzdn_sub2(k+1,k+1,isub))*probs(isub)
+           do kk=k+1,bcf
+              if(zkuL(kk+1).gt.10) then
+                 dzdn(kk+1,k+1)=dzdn(kk+1,k+1)+10**(0.1*zkasim_sub(kk+1,isub)+0.1*dzdn_sub2(kk+1,k+1,isub))*probs(isub)
+              end if
+           end do
+        end if
      end do
      piaKu=piaKu+probs(isub)*piaHB_sub(isub)
+     piaKa=piaKa+probs(isub)*piaKa_sub(isub)
      sumprob=sumprob+probs(isub)
   end do
   piaKu=piaKu/(sumprob+1e-10)+piaKuS
+  piaKa=piaKa/(sumprob+1e-10)
   do k=bzd,bcf
-     rrate1d(k+1)= rrate1d(k+1)/(sumprob+1e-10)
+     if(zkuL(k+1).gt.10) then
+        rrate1d(k+1)= rrate1d(k+1)/(sumprob+1e-10)
+        dm1d(k+1)=dm1d(k+1)/(sumprob+1e-10)
+        dn1d(k+1)=dn1d(k+1)/(sumprob+1e-10)
+        zkasim(k+1)=log10(zkasim(k+1)/(sumprob+1e-10))*10.0
+        dzdn(k+1,k+1)=(log10(dzdn(k+1,k+1)/(sumprob+1e-10))*10.0-zkasim(k+1))/(-0.1)
+        do kk=k+1,bcf
+           if(zkuL(kk+1).gt.10) then
+              dzdn(kk+1,k+1)=(log10(dzdn(kk+1,k+1)/(sumprob+1e-10))*10.0-log10(zkasim(kk+1)/(sumprob+1e-9))*10)/(-0.1)
+           end if
+        end do
+     end if
   end do
   if(rrate1d(bcf+1).gt.150) then
      print*, rrate1d_sub(bcf+1,:)

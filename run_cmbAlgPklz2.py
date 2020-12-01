@@ -94,6 +94,7 @@ zetaHL=[]
 epsL=[]
 rsfcL=[]
 zdnw=[]
+dndmL=[]
 for i in range(z1L.shape[0]):
     dnCoeff=array([ 0.00827692, -0.19116723])
     dnCoeff=array([ 0.01608098, -0.82884294])
@@ -114,7 +115,7 @@ for i in range(z1L.shape[0]):
             dn=0.5
     dn=0.1
     dn=0.1+(ic[labels[i]]-8)/8*0.2
-    dn=0.0
+    dn=0.2
     reliabFlag=0
     dsrtPIA=-99.9
     pType=2
@@ -135,6 +136,7 @@ for i in range(z1L.shape[0]):
         #stop
         piaLs.append([piaku0,addInfoL[i,-2]])
         rsfcL.append([rrate1d0[bcf],addInfoL[i,8]])
+        dndmL.append([dn1d[bcf],dm1d[bcf]])
         #stop
 
 
